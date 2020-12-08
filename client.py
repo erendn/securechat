@@ -5,41 +5,29 @@ from utils import *
 
 serverKey = None
 keys = {}
-buffer = 2048
 keyShared = False
 toSend = None
 
-
 def receive(socket, signal):
-    global serverKey, keys, buffer, keyShared, toSend
+    """ Waits for incoming messages and processes them. """
+    global serverKey, keys, keyShared, toSend
     while signal:
-        data = socket.recv(buffer)
+        data = receivePackets(socket)
         if keyShared is True:
             data = decrypt(keys["private"], data)
         if data.startswith(b"$server-public-key"):
             serverKey = data.decode()[19:]
         elif data.startswith(b"$request-public-key"):
-            socket.sendall(
-                encrypt(serverKey,
-                        str.encode("$client-public-key " + keys["public"])))
+            sendPackets(socket, encrypt(serverKey, str.encode("$client-public-key " + keys["public"])))
             keyShared = True
         elif data.startswith(b"$coming-from"):
             print("@" + data.split(b" ", 2)[1].decode() + ":")
             print(decrypt(keys["private"], data.split(b" ", 2)[2]).decode())
         elif data.startswith(b"$user-public-key"):
             publicKey = data[17:].decode()
-            sock.sendall(
-                encrypt(
-                    serverKey,
-                    str.encode("$sending-to " + username + " ") +
-                    encrypt(publicKey, str.encode(message))))
+            sendPackets(sock, encrypt(serverKey, str.encode("$sending-to " + username + " ") + encrypt(publicKey, str.encode(message))))
         else:
             print(str(data.decode()))
-
-
-def send(socket, message):
-    socket.sendall(str.encode(message))
-
 
 if __name__ == "__main__":
     keys = readFile("crypto-client")
@@ -66,9 +54,7 @@ if __name__ == "__main__":
             # split must change
             username = message.split(" ", 1)[0][1:]
             message = message.split(" ", 1)[1]
-            sock.sendall(
-                encrypt(serverKey,
-                        str.encode("$request-public-key " + username)))
+            sendPackets(sock, encrypt(serverKey, str.encode("$request-public-key " + username)))
             toSend = message
         else:
-            sock.sendall(str.encode(message))
+            sendPackets(sock, str.encode(message))
