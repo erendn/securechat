@@ -7,3 +7,16 @@ SecureChat uses [pycryptodome](https://pypi.org/project/pycryptodome/) library f
 pip install pycryptodome
 ```
 After installing pycrytodome, you can download scripts and run on your terminal.
+
+## Command List
+```
+        COMMAND         |         DESCRIPTION
+======================================================
+!help                   |   Prints command list.
+                        |
+!register               |   Register to the server.
+!login                  |   Log in to your account.
+!logout                 |   Log out from your account.
+                        |
+@[username] [message]   |   Send a message to a user.
+```

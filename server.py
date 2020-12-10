@@ -3,26 +3,73 @@ import threading
 from utils import *
 
 users = {}
+""" users structure:
+users = {
+    "username": "password",
+}
+"""
 keys = {}
 connections = []
 total_connections = 0
-buffer = 2048
 
 class Client(threading.Thread):
     """ Client is a thread waiting for incoming messages to its socket. """
 
-    def __init__(self, socket, address, username, publicKey, signal):
+    def __init__(self, socket, address, signal):
         """ Instantiates a new Client object. """
         threading.Thread.__init__(self)
         self.socket = socket
         self.address = address
-        self.username = username
-        self.publicKey = publicKey
+        self.username = None
+        self.publicKey = None
         self.signal = signal
+
+    def register(self, username, password):
+        """ Registers a new user and stores its password. Sends error if there is already a user with that username. """
+        if username in users:
+            sendPackets(self.socket, b"$register exists")
+            return
+        users[username] = password
+        self.username = username
+        writeFile("users", users)
+        sendPackets(self.socket, b"$register success")
+        print("@" + username + " registered and logged in successfully.")
+
+    def login(self, username, password):
+        """ Logs a user in. Sends error if there is no user with that username. If there is an open connection which logged in to that account, logs it out. """
+        if username not in users:
+            sendPackets(self.socket, b"$login nouser")
+            return
+        passw = users[username]
+        if passw != password:
+            sendPackets(self.socket, b"$login wrongpass")
+            return
+        prevSession = getConnection(username)
+        if prevSession is not None:
+            prevSession.logout(True)
+        self.username = username
+        sendPackets(self.socket, b"$login success")
+        print("@" + username + " logged in successfully.")
+
+    def logout(self, isForced):
+        """ Logs a user out. Sends logout message to the client. """
+        if isForced:
+            sendPackets(self.socket, encrypt(self.publicKey, b"$logout forced"))
+        else:
+            sendPackets(self.socket, encrypt(self.publicKey, b"$logout"))
+        print("@" + self.username + " logged out successfully.")
+        self.username = None
+        self.publicKey = None
+
+    def close(self):
+        """ Closes the connection. """
+        self.signal = False
+        connections.remove(self)
+        self.socket.close()
+        print("Client from " + str(self.address) + " has disconnected")
 
     def run(self):
         """ Waits for incoming messages and processes them. """
-        global buffer
         while self.signal:
             try:
                 data = receivePackets(self.socket)
@@ -32,47 +79,58 @@ class Client(threading.Thread):
                 connections.remove(self)
                 break
             data = decrypt(keys["private"], data)
-            if data.startswith(b"$request-public-key"):
-                username = data[20:].decode()
-                client = getConnection(username)
-                if client is None:
-                    sendPackets(self.socket, encrypt(self.publicKey, str.encode("There is no user with the given username: " + username)))
-                else:
-                    sendPackets(self.socket, encrypt(self.publicKey, str.encode("$user-public-key " + client.publicKey)))
-            elif data.startswith(b"$sending-to"):
-                username = data.split(b" ", 2)[1].decode()
-                message = data.split(b" ", 2)[2]
-                client = getConnection(username)
-                sendPackets(client.socket, encrypt(client.publicKey, str.encode("$coming-from " + self.username + " ") + message))
+            if self.username is None:
+                if data.startswith(b"$login"):
+                    data = data.decode().split(" ", 2)
+                    response = self.login(data[1], data[2])
+                elif data.startswith(b"$register"):
+                    data = data.decode().split(" ", 2)
+                    response = self.register(data[1], data[2])
+            elif self.publicKey is None:
+                if data.startswith(b"$client-public-key"):
+                    self.publicKey = data[19:].decode()
+            else:
+                if data.startswith(b"$logout"):
+                    self.logout(False)
+                elif data.startswith(b"$request-public-key"):
+                    username = data[20:].decode()
+                    client = getConnection(username)
+                    if client is None:
+                        if username in users:
+                            sendPackets(self.socket, encrypt(self.publicKey, b"$user-offline"))
+                        else:
+                            sendPackets(self.socket, encrypt(self.publicKey, b"$user-notfound"))
+                    else:
+                        if client.publicKey is None:
+                            sendPackets(self.socket, encrypt(self.publicKey, b"$user-notsecure"))
+                        else:
+                            sendPackets(self.socket, encrypt(self.publicKey, str.encode("$user-public-key " + client.publicKey)))
+                elif data.startswith(b"$sending-to"):
+                    data = data.split(b" ", 2)
+                    username = data[1].decode()
+                    message = data[2]
+                    client = getConnection(username)
+                    if client is None:
+                        if username in users:
+                            sendPackets(self.socket, encrypt(self.publicKey, b"$user-offline"))
+                        else:
+                            sendPackets(self.socket, encrypt(self.publicKey, b"$user-notfound"))
+                    else:
+                        if client.publicKey is None:
+                            sendPackets(self.socket, encrypt(self.publicKey, b"$user-notsecure"))
+                        else:
+                            sendPackets(client.socket, encrypt(client.publicKey, b"$coming-from " + str.encode(username) + b" " + message))
 
 def newConnections(socket):
     """ Waits for new client connections and establishes server-client connection. """
-    global keys, users, buffer, connections, total_connections
+    global keys, users, connections, total_connections
+    print("Waiting for client connections...")
     while True:
         sock, address = socket.accept()
-        username = getUsername(address)
-        if username is None:
-            sendPackets(sock, str.encode("A username for your IP address is not recorded. Please provide a username: "))
-            try:
-                username = receivePackets(sock).decode("utf-8")
-                while getAddress(username) is not None:
-                    sendPackets(sock, str.encode("Username already exists. Please provide a different username: "))
-                    username = receivePackets(sock).decode("utf-8")
-            except:
-                return
-        users[username] = address
-        writeFile("users", users)
         sendPackets(sock, str.encode("$server-public-key " + keys["public"]))
-        sendPackets(sock, str.encode("$request-public-key"))
-        publicKey = receivePackets(sock)
-        publicKey = decrypt(keys["private"], publicKey).decode()
-        if publicKey.startswith("$client-public-key"):
-            publicKey = publicKey[19:]
-        connections.append(Client(sock, address, username, publicKey, True))
+        connections.append(Client(sock, address, True))
         connections[len(connections) - 1].start()
-        print("New connection with user @" + username + " from " +
-              str(address[1]))
-        total_connections += 1
+        print("New connection from " + str(address[1]))
 
 def getConnection(username):
     """ Returns the Client object with the given username. """
@@ -80,22 +138,6 @@ def getConnection(username):
     for client in connections:
         if client.username == username:
             return client
-    return None
-
-def getUsername(address):
-    """ Returns the username of the client with the given IP address. """
-    global users
-    for user, ip in users.items():
-        if ip == address:
-            return user
-    return None
-
-def getAddress(username):
-    """ Returns the IP address of the client with the given name. """
-    global users
-    for user, ip in users.items():
-        if user == username:
-            return ip
     return None
 
 if __name__ == "__main__":
@@ -107,6 +149,7 @@ if __name__ == "__main__":
         keys = generateKeys()
         writeFile("crypto-server", keys)
 
+    print("Welcome to SecureChat server.")
     host = input("Host: ")
     port = int(input("Port: "))
 
