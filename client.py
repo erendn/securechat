@@ -9,15 +9,19 @@ keyShared = False
 toSend = None
 loggedIn = False
 helpMessage = """
-        COMMAND         |         DESCRIPTION
-======================================================
-!help                   |   Prints command list.
-                        |
-!register               |   Register to the server.
-!login                  |   Log in to your account.
-!logout                 |   Log out from your account.
-                        |
-@[username] [message]   |   Send a message to a user.
+          COMMAND           |                    DESCRIPTION
+===============================================================================
+!help                       |      Prints command list.
+                            |
+!register                   |      Register to server.
+!login                      |      Log in to your account.
+!logout                     |      Log out from your account.
+!exit                       |      Exits the application.
+                            |
+@[username] [message]       |      Send message to a user.
+                            |
+!block      [username]      |      Blocks all messages coming from a user.
+!unblock    [username]      |      Starts receiving messages again from a user.
 """
 
 def receive(socket, signal):
@@ -58,10 +62,28 @@ def receive(socket, signal):
                     print("Another session started with this account. Forced to log out.")
                 else:
                     print("Successfully logged out.")
+            elif data.startswith(b"$block"):
+                data = data[7:]
+                if data == b"nouser":
+                    print("No user found with that username.")
+                elif data == b"already":
+                    print("User already blocked.")
+                elif data == b"success":
+                    print("Successfully blocked user.")
+            elif data.startswith(b"$unblock"):
+                data = data[9:]
+                if data == b"nouser":
+                    print("No user found with that username.")
+                elif data == b"already":
+                    print("User is not blocked already.")
+                elif data == b"success":
+                    print("Successfully unblocked user.")
             elif data.startswith(b"$user-offline"):
                 print("User is offline.")
             elif data.startswith(b"$user-notfound"):
                 print("No user found.")
+            elif data.startswith(b"$user-blocked"):
+                print("User blocked all messages from you.")
             elif data.startswith(b"$user-notsecure"):
                 print("User's connection is not secure at the moment.")
             elif data.startswith(b"$user-public-key"):
@@ -96,13 +118,16 @@ if __name__ == "__main__":
         input("Press enter to quit.")
         sys.exit(0)
 
-    receiveThread = threading.Thread(target=receive, args=(sock, True))
+    receiveThread = threading.Thread(target=receive, args=(sock, True), daemon=True)
     receiveThread.start()
 
     while True:
         command = input()
         if command == "!help":
             print(helpMessage)
+        elif command == "!exit":
+            sendPackets(sock, encrypt(serverKey, b"$close"))
+            sys.exit(0)
         elif not loggedIn:
             if command == "!login" or command == "!register":
                 username = input("Username: ")
@@ -116,6 +141,10 @@ if __name__ == "__main__":
         else:
             if command == "!logout":
                 sendPackets(sock, encrypt(serverKey, b"$logout"))
+            elif command.startswith("!block"):
+                sendPackets(sock, encrypt(serverKey, b"$block " + str.encode(command[7:])))
+            elif command.startswith("!unblock"):
+                sendPackets(sock, encrypt(serverKey, b"$unblock " + str.encode(command[9:])))
             elif command.startswith("@"):
                 message = command.split(" ", 1)
                 username = message[0][1:]

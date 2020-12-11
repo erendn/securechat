@@ -3,9 +3,14 @@ import threading
 from utils import *
 
 users = {}
-""" users structure:
+""" users file structure:
 users = {
-    "username": "password",
+    "username": {
+        "password": "...",
+        "blocked": [
+            "...",
+        ]
+    }
 }
 """
 keys = {}
@@ -29,7 +34,9 @@ class Client(threading.Thread):
         if username in users:
             sendPackets(self.socket, b"$register exists")
             return
-        users[username] = password
+        users[username] = {}
+        users[username]["password"] = password
+        users[username]["blocked"] = []
         self.username = username
         writeFile("users", users)
         sendPackets(self.socket, b"$register success")
@@ -40,7 +47,7 @@ class Client(threading.Thread):
         if username not in users:
             sendPackets(self.socket, b"$login nouser")
             return
-        passw = users[username]
+        passw = users[username]["password"]
         if passw != password:
             sendPackets(self.socket, b"$login wrongpass")
             return
@@ -61,6 +68,32 @@ class Client(threading.Thread):
         self.username = None
         self.publicKey = None
 
+    def block(self, username):
+        """ Blocks a user. """
+        if username not in users:
+            sendPackets(self.socket, encrypt(self.publicKey, b"$block nouser"))
+            return
+        if username in users[self.username]["blocked"]:
+            sendPackets(self.socket, encrypt(self.publicKey, b"$block already"))
+            return
+        users[self.username]["blocked"].append(username)
+        writeFile("users", users)
+        sendPackets(self.socket, encrypt(self.publicKey, b"$block success"))
+
+    def unblock(self, username):
+        """ Unblocks a user. """
+        if username not in users:
+            print(username)
+            print(users)
+            sendPackets(self.socket, encrypt(self.publicKey, b"$unblock nouser"))
+            return
+        if username not in users[self.username]["blocked"]:
+            sendPackets(self.socket, encrypt(self.publicKey, b"$unblock already"))
+            return
+        users[self.username]["blocked"].remove(username)
+        writeFile("users", users)
+        sendPackets(self.socket, encrypt(self.publicKey, b"$unblock success"))
+
     def close(self):
         """ Closes the connection. """
         self.signal = False
@@ -74,12 +107,15 @@ class Client(threading.Thread):
             try:
                 data = receivePackets(self.socket)
             except:
-                print("Client " + str(self.username) + " has disconnected")
-                self.signal = False
-                connections.remove(self)
+                if self.signal:
+                    print("Client from " + str(self.address) + " has disconnected")
+                    self.signal = False
+                    connections.remove(self)
                 break
             data = decrypt(keys["private"], data)
-            if self.username is None:
+            if data.startswith(b"$close"):
+                self.close()
+            elif self.username is None:
                 if data.startswith(b"$login"):
                     data = data.decode().split(" ", 2)
                     response = self.login(data[1], data[2])
@@ -92,6 +128,10 @@ class Client(threading.Thread):
             else:
                 if data.startswith(b"$logout"):
                     self.logout(False)
+                elif data.startswith(b"$block"):
+                    self.block(data[7:].decode())
+                elif data.startswith(b"$unblock"):
+                    self.unblock(data[9:].decode())
                 elif data.startswith(b"$request-public-key"):
                     username = data[20:].decode()
                     client = getConnection(username)
@@ -101,7 +141,9 @@ class Client(threading.Thread):
                         else:
                             sendPackets(self.socket, encrypt(self.publicKey, b"$user-notfound"))
                     else:
-                        if client.publicKey is None:
+                        if self.username in users[username]["blocked"]:
+                            sendPackets(self.socket, encrypt(self.publicKey, b"$user-blocked"))
+                        elif client.publicKey is None:
                             sendPackets(self.socket, encrypt(self.publicKey, b"$user-notsecure"))
                         else:
                             sendPackets(self.socket, encrypt(self.publicKey, str.encode("$user-public-key " + client.publicKey)))
@@ -116,10 +158,12 @@ class Client(threading.Thread):
                         else:
                             sendPackets(self.socket, encrypt(self.publicKey, b"$user-notfound"))
                     else:
-                        if client.publicKey is None:
+                        if self.username in users[username]["blocked"]:
+                            sendPackets(self.socket, encrypt(self.publicKey, b"$user-blocked"))
+                        elif client.publicKey is None:
                             sendPackets(self.socket, encrypt(self.publicKey, b"$user-notsecure"))
                         else:
-                            sendPackets(client.socket, encrypt(client.publicKey, b"$coming-from " + str.encode(username) + b" " + message))
+                            sendPackets(client.socket, encrypt(client.publicKey, b"$coming-from " + str.encode(self.username) + b" " + message))
 
 def newConnections(socket):
     """ Waits for new client connections and establishes server-client connection. """
