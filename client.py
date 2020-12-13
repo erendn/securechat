@@ -1,32 +1,36 @@
 import socket
 import threading
 import sys
+from os import path
 from utils import *
 
 serverKey = None
 keys = {}
 keyShared = False
 toSend = None
+fileToSend = None
+fileSender = None
 loggedIn = False
 helpMessage = """
-          COMMAND           |                    DESCRIPTION
-===============================================================================
-!help                       |      Prints command list.
-                            |
-!register                   |      Register to server.
-!login                      |      Log in to your account.
-!logout                     |      Log out from your account.
-!exit                       |      Exits the application.
-                            |
-@[username] [message]       |      Send message to a user.
-                            |
-!block      [username]      |      Blocks all messages coming from a user.
-!unblock    [username]      |      Starts receiving messages again from a user.
+               COMMAND                  |                   DESCRIPTION
+=======================================================================================
+!help                                   |   Print command list.
+                                        |
+!register                               |   Register to server.
+!login                                  |   Log in to your account.
+!logout                                 |   Log out from your account.
+!exit                                   |   Exit the application.
+                                        |
+@[username] [message]                   |   Send message to a user.
+!file       [username]  [file_path]     |   Send file to a user
+                                        |
+!block      [username]                  |   Block all messages coming from a user.
+!unblock    [username]                  |   Start receiving messages again from a user.
 """
 
 def receive(socket, signal):
     """ Waits for incoming messages and processes them. """
-    global serverKey, keys, keyShared, toSend, loggedIn
+    global serverKey, keys, keyShared, toSend, fileToSend, fileSender, loggedIn
     while signal:
         data = receivePackets(socket)
         if keyShared is True:
@@ -87,13 +91,37 @@ def receive(socket, signal):
             elif data.startswith(b"$user-notsecure"):
                 print("User's connection is not secure at the moment.")
             elif data.startswith(b"$user-public-key"):
-                key = data[17:].decode()
+                data = data.decode().split(" ", 2)
+                username = data[1]
+                key = data[2]
                 sendPackets(socket, encrypt(serverKey, str.encode("$sending-to " + username + " ") + encrypt(key, str.encode(toSend))))
+                toSend = None
             elif data.startswith(b"$coming-from"):
                 data = data.split(b" ", 2)
                 print("@" + data[1].decode() + ":")
                 print(decrypt(keys["private"], data[2]).decode())
-
+            elif data.startswith(b"$file-perm"):
+                data = data.decode().split(" ", 2)
+                fileSender = data[1]
+                fileName = data[2]
+                print("@" + fileSender + " wants to send you a file named '" + fileName + "'. Would you like to receive it? (y/n):")
+            elif data.startswith(b"$send-file-no"):
+                print("User rejected your request.")
+            elif data.startswith(b"$send-file-for"):
+                data = data.split(b" ", 2)
+                username = data[1]
+                key = data[2].decode()
+                fileName = str.encode(fileToSend.rsplit("\\", 1)[1]).replace(b" ", b"")
+                fileContent = readFile(fileToSend)
+                sendPackets(socket, encrypt(serverKey, b"$file-sending-to " + username + b" " + encrypt(key, fileName + b" " + fileContent)))
+                fileToSend = None
+            elif data.startswith(b"$file-coming-from"):
+                data = data.split(b" ", 2)
+                username = data[1].decode()
+                data = decrypt(keys["private"], data[2]).split(b" ", 1)
+                fileName = data[0].decode()
+                fileContent = data[1]
+                writeFile(fileName, fileContent)
 
 def isValidUsername(username):
     """ Checks if a username is valid. """
@@ -102,10 +130,10 @@ def isValidUsername(username):
     return True
 
 if __name__ == "__main__":
-    keys = readFile("crypto-client")
+    keys = readJSONFile("crypto-client")
     if keys is None:
         keys = generateKeys()
-        writeFile("crypto-client", keys)
+        writeJSONFile("crypto-client", keys)
     print("Welcome to SecureChat.")
     host = input("Host: ")
     port = int(input("Port: "))
@@ -151,5 +179,17 @@ if __name__ == "__main__":
                 message = message[1]
                 sendPackets(sock, encrypt(serverKey, str.encode("$request-public-key " + username)))
                 toSend = message
+            elif command.startswith("!file"):
+                command = command.split(" ", 2)
+                username = command[1]
+                fileToSend = command[2]
+                if path.exists(fileToSend):
+                    sendPackets(sock, encrypt(serverKey, str.encode("$send-file-to " + username + " " + fileToSend.rsplit("\\", 1)[1])))
+                else:
+                    print("File does not exist.")
+            elif fileSender is not None and command == "y":
+                sendPackets(sock, encrypt(serverKey, b"$file-perm-ok " + str.encode(fileSender)))
+            elif fileSender is not None:
+                sendPackets(sock, encrypt(serverKey, b"$file-perm-no " + str.encode(fileSender)))
             else:
                 print("Unknown command. Type !help for more infomation.")

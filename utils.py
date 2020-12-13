@@ -1,3 +1,4 @@
+import os
 import json
 from Crypto import Random
 from Crypto.Cipher import PKCS1_OAEP
@@ -8,6 +9,20 @@ from Crypto.Util import number
 from binascii import hexlify
 
 def readFile(path):
+    try:
+        file = open(path, mode="rb")
+        content = file.read()
+        file.close()
+        return content
+    except:
+        return None
+
+def writeFile(path, content):
+    file = open(path, mode="wb")
+    file.write(content)
+    file.close()
+
+def readJSONFile(path):
     """ Reads a JSON file from the given path. Returns None if file does not exist."""
     try:
         file = open(path + ".json", "r")
@@ -17,15 +32,15 @@ def readFile(path):
     except:
         return None
 
-def writeFile(path, content):
+def writeJSONFile(path, content):
     """ Writes a JSON file to the given path with the given content. """
     with open(path + ".json", "w") as file:
         json.dump(content, file)
         file.close()
 
-def generateKeys(bitSize=1024):
+def generateKeys(bitSize=2048):
     """ Returns a dict with randomly generated RSA key string pair with the given bit size. """
-    private = RSA.generate(1024)
+    private = RSA.generate(2048)
     public = private.publickey()
     keys = {}
     keys["private"] = private.export_key().decode()
