@@ -1,14 +1,11 @@
 import os
 import json
-from Crypto import Random
 from Crypto.Cipher import PKCS1_OAEP
-from Crypto.Hash import MD5, SHA, SHA1, SHA256, SHA384, SHA512
 from Crypto.PublicKey import RSA
-from Crypto.Signature import PKCS1_v1_5
 from Crypto.Util import number
-from binascii import hexlify
 
 def readFile(path):
+    """ Reads a file from the given path and returns data in byte array format. Returns None if file does not exist."""
     try:
         file = open(path, mode="rb")
         content = file.read()
@@ -17,7 +14,16 @@ def readFile(path):
     except:
         return None
 
-def writeFile(path, content):
+def writeFile(path, content, parentFolder="downloads"):
+    """ Writes the content in a file on the given path. If path does not exist, makes a new directory. """
+    path = os.path.join(parentFolder, path)
+    if not os.path.exists(path.rsplit("\\", 1)[0]):
+        os.mkdir(path.rsplit("\\", 1)[0])
+    origPath = path.rsplit(".")
+    count = 1
+    while os.path.exists(path):
+        path = origPath[0] + "(" + str(count) + ")." + origPath[1]
+        count += 1
     file = open(path, mode="wb")
     file.write(content)
     file.close()

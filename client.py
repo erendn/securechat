@@ -1,7 +1,7 @@
 import socket
 import threading
 import sys
-from os import path
+import os
 from utils import *
 
 serverKey = None
@@ -32,7 +32,12 @@ def receive(socket, signal):
     """ Waits for incoming messages and processes them. """
     global serverKey, keys, keyShared, toSend, fileToSend, fileSender, loggedIn
     while signal:
-        data = receivePackets(socket)
+        try:
+            data = receivePackets(socket)
+        except:
+            print("Connection to the server is lost. Please check your internet connection and/or firewall settings.")
+            input("Press enter to quit.")
+            sys.exit(0)
         if keyShared is True:
             data = decrypt(keys["private"], data)
         if serverKey is None:
@@ -122,6 +127,7 @@ def receive(socket, signal):
                 fileName = data[0].decode()
                 fileContent = data[1]
                 writeFile(fileName, fileContent)
+                print("File '" + fileName + "' downloaded.")
 
 def isValidUsername(username):
     """ Checks if a username is valid. """
@@ -141,6 +147,7 @@ if __name__ == "__main__":
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((host, port))
+        print("You are connected to the server.")
     except:
         print("Could not make a connection to the server. Please check your internet connection and/or firewall settings.")
         input("Press enter to quit.")
@@ -183,7 +190,7 @@ if __name__ == "__main__":
                 command = command.split(" ", 2)
                 username = command[1]
                 fileToSend = command[2]
-                if path.exists(fileToSend):
+                if os.path.exists(fileToSend):
                     sendPackets(sock, encrypt(serverKey, str.encode("$send-file-to " + username + " " + fileToSend.rsplit("\\", 1)[1])))
                 else:
                     print("File does not exist.")
