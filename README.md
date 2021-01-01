@@ -48,6 +48,7 @@ After installing pycrytodome, you can download scripts and run on your terminal.
 !login                                  |   Log in to your account.
 !logout                                 |   Log out from your account.
 !exit                                   |   Exit the application.
+!resetkeys                              |   Regenerate RSA keys.
                                         |
 @[username] [message]                   |   Send message to a user.
 !file       [username]  [file_path]     |   Send file to a user

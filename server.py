@@ -144,6 +144,8 @@ class Client(threading.Thread):
             else:
                 if data.startswith(b"$logout"):
                     self.logout(False)
+                elif data.startswith(b"$client-public-key"):
+                    self.publicKey = data[19:].decode()
                 elif data.startswith(b"$block"):
                     self.block(data[7:].decode())
                 elif data.startswith(b"$unblock"):

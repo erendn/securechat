@@ -22,7 +22,7 @@ def writeFile(path, content, parentFolder="downloads"):
     origPath = path.rsplit(".")
     count = 1
     while os.path.exists(path):
-        path = origPath[0] + "(" + str(count) + ")." + origPath[1]
+        path = origPath[0] + " (" + str(count) + ")." + origPath[1]
         count += 1
     file = open(path, mode="wb")
     file.write(content)

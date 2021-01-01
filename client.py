@@ -20,6 +20,7 @@ helpMessage = """
 !login                                  |   Log in to your account.
 !logout                                 |   Log out from your account.
 !exit                                   |   Exit the application.
+!resetkeys                              |   Regenerate RSA keys.
                                         |
 @[username] [message]                   |   Send message to a user.
 !file       [username]  [file_path]     |   Send file to a user
@@ -180,6 +181,10 @@ if __name__ == "__main__":
                 sendPackets(sock, encrypt(serverKey, b"$block " + str.encode(command[7:])))
             elif command.startswith("!unblock"):
                 sendPackets(sock, encrypt(serverKey, b"$unblock " + str.encode(command[9:])))
+            elif command.startswith("!resetkeys"):
+                keys = generateKeys()
+                writeJSONFile("crypto-client", keys)
+                sendPackets(sock, encrypt(serverKey, str.encode("$client-public-key " + keys["public"])))
             elif command.startswith("@"):
                 message = command.split(" ", 1)
                 username = message[0][1:]
