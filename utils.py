@@ -46,7 +46,7 @@ def writeJSONFile(path, content):
 
 def generateKeys(bitSize=2048):
     """ Returns a dict with randomly generated RSA key string pair with the given bit size. """
-    private = RSA.generate(2048)
+    private = RSA.generate(bitSize)
     public = private.publickey()
     keys = {}
     keys["private"] = private.export_key().decode()
@@ -89,6 +89,6 @@ def receivePackets(socket, size=4096):
         data += socket.recv(size if dataSize - len(data) >= size else dataSize - len(data))
     return data
 
-def sendPackets(socket, message, size=4096):
+def sendPackets(socket, message):
     """ Sends a message to a socket. Adds the length of the message at the beginning. """
     socket.sendall(str(len(message)).encode("utf-8") + b" " + message)
